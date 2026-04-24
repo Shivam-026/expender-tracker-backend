@@ -16,14 +16,21 @@ from app.models import Expense
 
 Base.metadata.create_all(bind=engine)
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "").rstrip("/")
 
 # Build CORS origin regex to allow main domain and Vercel preview subdomains
-# Matches: https://myapp.vercel.app OR https://myapp-*.vercel.app
+# Matches: https://myapp.vercel.app OR https://myapp-abc123.vercel.app
 if FRONTEND_URL and "vercel.app" in FRONTEND_URL:
-    # Extract base name: https://myapp.vercel.app -> myapp
-    base_name = FRONTEND_URL.split("//")[-1].split(".")[0]
-    ORIGIN_REGEX = rf"https://{base_name}(-.*)?\.vercel\.app"
+    # Extract base name and strip any existing suffix
+    # e.g., https://myapp-abc123.vercel.app -> myapp
+    # e.g., https://myapp.vercel.app -> myapp
+    full_hostname = FRONTEND_URL.split("//")[-1].split(".")[0]
+    # Remove the random suffix if present (-8chars of alphanumeric)
+    if "-" in full_hostname:
+        base_name = full_hostname.rsplit("-", 1)[0]
+    else:
+        base_name = full_hostname
+    ORIGIN_REGEX = rf"https://{base_name}(-[a-zA-Z0-9]+)?\.vercel\.app"
 else:
     ORIGIN_REGEX = r"https?://localhost(:\d+)?"
 
