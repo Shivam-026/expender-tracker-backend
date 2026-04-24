@@ -16,14 +16,25 @@ from app.models import Expense
 
 Base.metadata.create_all(bind=engine)
 
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+
+# Build CORS origin regex to allow main domain and Vercel preview subdomains
+# Matches: https://myapp.vercel.app OR https://myapp-*.vercel.app
+if FRONTEND_URL and "vercel.app" in FRONTEND_URL:
+    # Extract base name: https://myapp.vercel.app -> myapp
+    base_name = FRONTEND_URL.split("//")[-1].split(".")[0]
+    ORIGIN_REGEX = rf"https://{base_name}(-.*)?\.vercel\.app"
+else:
+    ORIGIN_REGEX = r"https?://localhost(:\d+)?"
+
+
 def get_cors_origins():
     origins = [
         "http://localhost:5173",
         "http://localhost:3000",
     ]
-    frontend_url = os.getenv("FRONTEND_URL")
-    if frontend_url:
-        origins.append(frontend_url)
+    if FRONTEND_URL:
+        origins.append(FRONTEND_URL)
     return origins
 
 
@@ -31,6 +42,7 @@ middleware = [
     Middleware(
         CORSMiddleware,
         allow_origins=get_cors_origins(),
+        allow_origin_regex=ORIGIN_REGEX,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
