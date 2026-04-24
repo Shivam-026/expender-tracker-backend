@@ -1,14 +1,13 @@
 services:
   - type: web
-    name: expense-tracker-api
+    name: expender-tracker-backend
     runtime: python
+    plan: free
     buildCommand: |
-      export PYTHON_VERSION=3.11.0
-      pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+      apt-get update && apt-get install -y python3.11 python3.11-venv python3-pip
+      python3.11 -m pip install -r requirements.txt
+    startCommand: python3.11 -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
       - key: DATABASE_URL
         value: sqlite:///./expenses.db
     disk:
