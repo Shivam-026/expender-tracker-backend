@@ -1,11 +1,11 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field
 from decimal import Decimal
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, List
 
 
 class ExpenseBase(BaseModel):
-    amount: Decimal = Field(..., gt=0, decimal_places=2, description="Amount in INR")
+    amount: Decimal = Field(..., gt=0, description="Amount in INR")
     category: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
     date: date
@@ -16,14 +16,18 @@ class ExpenseCreate(ExpenseBase):
 
 
 class ExpenseResponse(ExpenseBase):
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     client_id: str
     amount: str
     created_at: datetime
 
+    class Config:
+        orm_mode = True
+
 
 class ExpenseListResponse(BaseModel):
-    expenses: list[ExpenseResponse]
+    expenses: List[ExpenseResponse]
     total: str
+
+    class Config:
+        orm_mode = True
