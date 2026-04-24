@@ -1,117 +1,140 @@
 import os
-from fastapi import FastAPI, Depends, Query, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
+import json
 from decimal import Decimal
+from datetime import date
 from typing import Optional
+
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 
 from app.database import get_db, engine, Base
 from app.models import Expense
-from app.schemas import ExpenseCreate, ExpenseResponse, ExpenseListResponse
 
-# Create tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Expense Tracker API", version="1.0.0")
-
-# CORS - allow Vercel frontend and local development
-origins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "https://*.vercel.app",  # Allow all Vercel deployments
+middleware = [
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://localhost:3000", "https://*.vercel.app"] +
+                     ([os.getenv("FRONTEND_URL")] if os.getenv("FRONTEND_URL") else []),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 ]
 
-# Add specific Vercel URL if provided via env
-if os.getenv("FRONTEND_URL"):
-    origins.append(os.getenv("FRONTEND_URL"))
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def serialize_expense(e):
+    return {
+        "id": e.id,
+        "client_id": e.client_id,
+        "amount": str(e.amount),
+        "category": e.category,
+        "description": e.description,
+        "date": str(e.date),
+        "created_at": e.created_at.isoformat() if e.created_at else None,
+    }
 
 
-@app.post("/expenses", response_model=ExpenseResponse)
-def create_expense(expense: ExpenseCreate, db: Session = Depends(get_db)):
-    """Create a new expense. Idempotent - returns existing if client_id already exists."""
-    # Check if expense with this client_id already exists
-    existing = db.query(Expense).filter(Expense.client_id == expense.client_id).first()
-    if existing:
-        return ExpenseResponse(
-            id=existing.id,
-            client_id=existing.client_id,
-            amount=str(existing.amount),
-            category=existing.category,
-            description=existing.description,
-            date=existing.date,
-            created_at=existing.created_at,
+async def create_expense(request):
+    """Create a new expense."""
+    data = await request.json()
+
+    client_id = data.get("client_id", "")
+    amount = data.get("amount")
+    category = data.get("category", "")
+    description = data.get("description")
+    date_str = data.get("date", "")
+
+    if not client_id or len(client_id) != 36:
+        return JSONResponse({"detail": "client_id must be 36 characters"}, status_code=400)
+    if not category:
+        return JSONResponse({"detail": "category is required"}, status_code=400)
+    if not amount:
+        return JSONResponse({"detail": "amount is required"}, status_code=400)
+    if not date_str:
+        return JSONResponse({"detail": "date is required"}, status_code=400)
+
+    db = next(get_db())
+    try:
+        existing = db.query(Expense).filter(Expense.client_id == client_id).first()
+        if existing:
+            return JSONResponse(serialize_expense(existing))
+
+        try:
+            amount_decimal = Decimal(str(amount))
+            if amount_decimal <= 0:
+                return JSONResponse({"detail": "amount must be greater than 0"}, status_code=400)
+        except:
+            return JSONResponse({"detail": "invalid amount"}, status_code=400)
+
+        try:
+            expense_date = date.fromisoformat(date_str)
+        except:
+            return JSONResponse({"detail": "invalid date format"}, status_code=400)
+
+        db_expense = Expense(
+            client_id=client_id,
+            amount=amount_decimal,
+            category=category,
+            description=description,
+            date=expense_date,
         )
+        db.add(db_expense)
+        db.commit()
+        db.refresh(db_expense)
 
-    db_expense = Expense(
-        client_id=expense.client_id,
-        amount=expense.amount,
-        category=expense.category,
-        description=expense.description,
-        date=expense.date,
-    )
-    db.add(db_expense)
-    db.commit()
-    db.refresh(db_expense)
-
-    return ExpenseResponse(
-        id=db_expense.id,
-        client_id=db_expense.client_id,
-        amount=str(db_expense.amount),
-        category=db_expense.category,
-        description=db_expense.description,
-        date=db_expense.date,
-        created_at=db_expense.created_at,
-    )
+        return JSONResponse(serialize_expense(db_expense), status_code=201)
+    finally:
+        db.close()
 
 
-@app.get("/expenses", response_model=ExpenseListResponse)
-def list_expenses(
-    category: Optional[str] = Query(None, description="Filter by category"),
-    sort: Optional[str] = Query(None, description="Use 'date_desc' for newest first"),
-    db: Session = Depends(get_db),
-):
-    """List expenses with optional category filter and sorting."""
-    query = db.query(Expense)
+async def list_expenses(request):
+    """List all expenses."""
+    category = request.query_params.get("category")
+    sort_param = request.query_params.get("sort")
 
-    if category:
-        query = query.filter(Expense.category == category)
+    db = next(get_db())
+    try:
+        query = db.query(Expense)
 
-    if sort == "date_desc":
-        query = query.order_by(Expense.date.desc())
-    else:
-        query = query.order_by(Expense.date.asc())
+        if category:
+            query = query.filter(Expense.category == category)
 
-    expenses = query.all()
-    total = sum(Decimal(str(e.amount)) for e in expenses)
+        if sort_param == "date_desc":
+            query = query.order_by(Expense.date.desc())
+        else:
+            query = query.order_by(Expense.date.asc())
 
-    return ExpenseListResponse(
-        expenses=[
-            ExpenseResponse(
-                id=e.id,
-                client_id=e.client_id,
-                amount=str(e.amount),
-                category=e.category,
-                description=e.description,
-                date=e.date,
-                created_at=e.created_at,
-            )
-            for e in expenses
-        ],
-        total=str(total),
-    )
+        expenses = query.all()
+        total = sum(Decimal(str(e.amount)) for e in expenses)
+
+        return JSONResponse({
+            "expenses": [serialize_expense(e) for e in expenses],
+            "total": str(total),
+        })
+    finally:
+        db.close()
 
 
-@app.get("/categories")
-def get_categories(db: Session = Depends(get_db)):
+async def get_categories(request):
     """Get all unique categories."""
-    categories = db.query(Expense.category).distinct().all()
-    return {"categories": [c[0] for c in categories]}
+    db = next(get_db())
+    try:
+        categories = db.query(Expense.category).distinct().all()
+        return JSONResponse({"categories": [c[0] for c in categories]})
+    finally:
+        db.close()
+
+
+routes = [
+    Route("/expenses", create_expense, methods=["POST"]),
+    Route("/expenses", list_expenses, methods=["GET"]),
+    Route("/categories", get_categories, methods=["GET"]),
+]
+
+app = Starlette(debug=True, routes=routes, middleware=middleware)
