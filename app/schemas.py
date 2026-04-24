@@ -4,21 +4,21 @@ from datetime import date, datetime
 from typing import Optional, List
 
 
-class ExpenseBase(BaseModel):
-    amount: Decimal = Field(..., gt=0, description="Amount in INR")
+class ExpenseCreate(BaseModel):
+    client_id: str = Field(..., min_length=36, max_length=36)
+    amount: Decimal = Field(..., gt=0)
     category: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
     date: date
 
 
-class ExpenseCreate(ExpenseBase):
-    client_id: str = Field(..., min_length=36, max_length=36, description="UUID v4 for idempotency")
-
-
-class ExpenseResponse(ExpenseBase):
+class ExpenseResponse(BaseModel):
     id: int
     client_id: str
     amount: str
+    category: str
+    description: Optional[str]
+    date: date
     created_at: datetime
 
     class Config:
@@ -28,6 +28,3 @@ class ExpenseResponse(ExpenseBase):
 class ExpenseListResponse(BaseModel):
     expenses: List[ExpenseResponse]
     total: str
-
-    class Config:
-        orm_mode = True
