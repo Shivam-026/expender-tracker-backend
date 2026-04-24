@@ -131,7 +131,20 @@ async def get_categories(request):
         db.close()
 
 
+async def home(request):
+    """Root endpoint."""
+    return JSONResponse({
+        "message": "Expense Tracker API",
+        "endpoints": {
+            "POST /expenses": "Create a new expense",
+            "GET /expenses": "List all expenses",
+            "GET /categories": "Get all unique categories"
+        }
+    })
+
+
 routes = [
+    Route("/", home),
     Route("/expenses", create_expense, methods=["POST"]),
     Route("/expenses", list_expenses, methods=["GET"]),
     Route("/categories", get_categories, methods=["GET"]),
