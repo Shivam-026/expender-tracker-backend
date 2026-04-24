@@ -8,6 +8,8 @@ services:
     envVars:
       - key: DATABASE_URL
         value: sqlite:///./expenses.db
+      - key: FRONTEND_URL
+        value: https://expender-tracker-frontend.vercel.app
     disk:
       name: sqlite-data
       mountPath: /opt/render/project/src

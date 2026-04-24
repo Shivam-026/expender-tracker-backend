@@ -16,11 +16,21 @@ from app.models import Expense
 
 Base.metadata.create_all(bind=engine)
 
+def get_cors_origins():
+    origins = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ]
+    frontend_url = os.getenv("FRONTEND_URL")
+    if frontend_url:
+        origins.append(frontend_url)
+    return origins
+
+
 middleware = [
     Middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://localhost:3000", "https://*.vercel.app"] +
-                     ([os.getenv("FRONTEND_URL")] if os.getenv("FRONTEND_URL") else []),
+        allow_origins=get_cors_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
